@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+*.key
+*.pem
+auth.json
+config.toml
+*.backup
+*.bak
+__pycache__/
+*.pyc
