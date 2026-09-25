@@ -47,29 +47,65 @@ cd agentrouter-codex-desktop-setup
 ./scripts/install-macos.sh
 ```
 
-When prompted, paste your AgentRouter API key into Terminal and press Return.
+Enter `y` at `Continue? [y/N]`. When the hidden password prompt appears,
+paste your AgentRouter API key into Terminal and press Return.
 The key will not appear while you type or paste it.
 
-Then test the connection:
+Check the local settings, then test the connection once:
 
 ```bash
+./scripts/status-macos.sh
 ./scripts/test-macos.sh
 ```
 
-After a successful test, fully quit and reopen the ChatGPT desktop app, then
-start a **new Codex task**.
+Confirm the status output shows model `gpt-6-astra`, provider `agentrouter`,
+base URL `https://agentrouter.org/v1`, command-backed authentication configured,
+and a present Keychain entry. A present Keychain entry alone does not confirm
+that the provider settings were applied.
+
+The connection test disables HTTP and stream retries for that run. A successful
+model response of `AGENTROUTER_OK` confirms generation works. A `402` with
+`Budget pool quota has been exhausted` means **installed, but AgentRouter's
+shared pool currently has no capacity**. Keep the configuration; do not rerun
+the installer or repeatedly retry the test just because of this response.
+
+## See the model in the desktop app
+
+You can load the installed configuration even while AgentRouter's pool is empty:
+
+1. Fully quit the ChatGPT desktop app with **Command-Q**, then reopen it.
+2. Select **Codex** and start a **new local Codex task**. Existing tasks may keep
+   their original provider.
+3. Click the **model and reasoning control beneath the message box**.
+4. If your version shows **Advanced**, open it to choose a specific model.
+   Look for **Astra / GPT-6 Astra** (`gpt-6-astra`), the configured default.
+
+The exact labels and available controls vary by app version and rollout; see
+[OpenAI's model-selection guide](https://learn.chatgpt.com/docs/models#choose-a-model).
+AgentRouter is the provider selected in the configuration, while GPT-6 Astra
+is the model. Do not expect a separate model named “AgentRouter” or assume
+the model label alone proves which provider is active. Use the status check
+to inspect the saved provider; the CLI test prints the provider it actually uses.
+
+This repository does not add a provider-switching button or change the app's
+interface. The desktop dropdown was not independently verified during the
+September 25 setup; the steps above follow the official documentation. If the
+model is missing after a restart, see [Troubleshooting](TROUBLESHOOTING.md).
 
 ## Current AgentRouter resource releases
 
-AgentRouter's System Notice said on September 15, 2026 that Claude and GPT
-resources are released at:
+AgentRouter's live System Notice, checked on **September 25, 2026**, changed
+resource releases from three daily batches to **two**:
 
-- Beijing: 00:00, 08:00 and 16:00
-- UTC: 16:00, 00:00 and 08:00
+- Beijing: **10:00 and 19:00**
+- UTC: **02:00 and 11:00**
+- Athens on that date (EEST, UTC+3): **05:00 and 14:00**
 
 Resources are available only while supplies last. This schedule can change;
 open [AgentRouter](https://agentrouter.org/) and click the bell-shaped
 **System Notice** before recording or troubleshooting.
+Convert the live schedule using the user's timezone and the release date;
+Athens changes offset with daylight saving time.
 
 A response such as `402 Payment Required: Budget pool quota has been exhausted`
 usually means the AgentRouter resource pool has run out for that release window.
@@ -121,6 +157,7 @@ warnings, missing commands and rollback recovery.
 
 - [OpenAI: Advanced Codex configuration](https://learn.chatgpt.com/docs/config-file/config-advanced)
 - [OpenAI: Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+- [OpenAI: Choose a model in the desktop app](https://learn.chatgpt.com/docs/models#choose-a-model)
 - [OpenAI: GPT-6 Astra model](https://developers.openai.com/api/docs/models/gpt-6-astra)
 - [AgentRouter](https://agentrouter.org/)
 

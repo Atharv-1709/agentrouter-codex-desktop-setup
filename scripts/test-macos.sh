@@ -26,6 +26,8 @@ echo
 echo "Sending only a fixed confirmation prompt from an empty temporary folder..."
 
 codex exec \
+  -c model_providers.agentrouter.request_max_retries=0 \
+  -c model_providers.agentrouter.stream_max_retries=0 \
   --ephemeral \
   --skip-git-repo-check \
   --sandbox read-only \

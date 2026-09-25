@@ -21,7 +21,13 @@
 7. Run the harmless connectivity test.
 8. Explain successful, `401` and `402` outcomes.
 9. Restart the desktop app and open a new Codex task.
-10. Demonstrate rollback.
+10. Show the model/reasoning control below the message box and **Advanced**, if
+    present, to choose Astra / GPT-6 Astra. Explain that AgentRouter is the
+    configured provider and may not appear in the model's label.
+11. If the pool is empty, label the result “installed; generation unavailable”
+    and demonstrate the controls without repeatedly sending requests. Do not
+    imply the UI was verified if you could not actually open it.
+12. Demonstrate rollback.
 
 ## Before publishing
 
