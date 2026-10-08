@@ -238,6 +238,30 @@ name = "Keep"
         self.assertIn("PASS: dummy-only Credential Manager round-trip", completed.stdout)
         self.assertNotIn("offline-test-", completed.stdout + completed.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell")
+    def test_offline_resolver_checks_run_from_windows_powershell_51(self):
+        windows_powershell = shutil.which("powershell.exe")
+        if not windows_powershell:
+            self.skipTest("Windows PowerShell 5.1 is unavailable")
+        completed = subprocess.run(
+            [
+                windows_powershell,
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                str(ROOT / "scripts" / "test-windows.ps1"),
+                "-Offline",
+                "-SkipPythonTests",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("PASS: missing credential returned the expected error", completed.stdout)
+        self.assertNotIn("NativeCommandError", completed.stdout + completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

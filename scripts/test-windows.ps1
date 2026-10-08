@@ -2,6 +2,7 @@
 param(
     [switch] $Live,
     [switch] $Offline,
+    [switch] $SkipPythonTests,
     [ValidateSet('gpt-6-astra', 'gpt-5.5')]
     [string] $Model = 'gpt-6-astra'
 )
@@ -25,7 +26,32 @@ function Invoke-ResolverProcess {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
+    # ProcessStartInfo.ArgumentList is missing in Windows PowerShell 5.1's
+    # .NET Framework. Build a correctly escaped Windows command line instead.
+    $quotedArguments = foreach ($argument in $Arguments) {
+        $builder = [System.Text.StringBuilder]::new()
+        [void]$builder.Append('"')
+        $backslashes = 0
+        foreach ($character in $argument.ToCharArray()) {
+            if ($character -eq [char]92) {
+                $backslashes++
+                continue
+            }
+            if ($character -eq [char]34) {
+                for ($i = 0; $i -lt (2 * $backslashes + 1); $i++) { [void]$builder.Append([char]92) }
+                [void]$builder.Append([char]34)
+            }
+            else {
+                for ($i = 0; $i -lt $backslashes; $i++) { [void]$builder.Append([char]92) }
+                [void]$builder.Append($character)
+            }
+            $backslashes = 0
+        }
+        for ($i = 0; $i -lt (2 * $backslashes); $i++) { [void]$builder.Append([char]92) }
+        [void]$builder.Append('"')
+        $builder.ToString()
+    }
+    $startInfo.Arguments = $quotedArguments -join ' '
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
@@ -42,10 +68,16 @@ function Invoke-ResolverProcess {
 }
 
 if ($Live -and $Offline) { throw 'Choose either -Live or -Offline.' }
+if ($SkipPythonTests -and -not $Offline) { throw '-SkipPythonTests can be used only with -Offline.' }
 if ($Offline -or -not $Live) {
-    Write-Output 'Offline checks: Python config/backup/rollback tests and a unique missing-credential resolver check.'
-    & python -m unittest discover -s (Join-Path $repoRoot 'tests') -p 'test_*.py' -v
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($SkipPythonTests) {
+        Write-Output 'Offline checks: PowerShell resolver checks only (Python suite already ran in the parent test process).'
+    }
+    else {
+        Write-Output 'Offline checks: Python config/backup/rollback tests and a unique missing-credential resolver check.'
+        & python -m unittest discover -s (Join-Path $repoRoot 'tests') -p 'test_*.py' -v
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 
     $roundTripTarget = 'AgentRouter/Codex/offline-test-' + [guid]::NewGuid().ToString('N')
     $roundTrip = Invoke-ResolverProcess @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $resolver, '-SelfTest', '-TargetName', $roundTripTarget)
