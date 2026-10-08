@@ -1,4 +1,41 @@
-# Copy-paste setup prompt
+# Copy-paste setup prompts
+
+## Windows 10/11
+
+For native Windows setup, review the Windows section in the README, then run
+the repository's offline checks before installation:
+
+```powershell
+.\scripts\install-windows.ps1 -DryRun
+.\scripts\test-windows.ps1 -Offline
+```
+
+Only after reviewing the proposed settings and test results, run this locally:
+
+```powershell
+.\scripts\install-windows.ps1
+```
+
+Enter the key only in its hidden PowerShell prompt. Never send the key through
+chat, add it to config, or save it as a persistent environment variable. The
+current Windows path requires PowerShell 7 (`pwsh.exe`) and uses Responses
+because installed Codex 0.145.0 rejects Chat Completions, while the
+AgentRouter guide still documents Chat Completions; authenticated live
+compatibility is not verified. Astra is not on AgentRouter's current public
+model list. To explicitly choose the documented GPT-5.5 fallback, pass
+`-Model gpt-5.5`; never switch models without telling the user.
+
+The live connection test is opt-in and sends a fixed prompt only when the user
+runs this locally:
+
+```powershell
+.\scripts\test-windows.ps1 -Live -Model gpt-6-astra
+```
+
+Do not run it during repository development. Never use a real API key in
+automated tests. Use `rollback-windows.ps1` to restore the config.
+
+## macOS
 
 Paste everything below into a **new Codex task in the ChatGPT desktop app on
 macOS**. The task must have local computer and Terminal access.

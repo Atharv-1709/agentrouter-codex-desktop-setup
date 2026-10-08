@@ -1,8 +1,8 @@
-# AgentRouter GPT-6 Astra setup for Codex on macOS
+# AgentRouter setup for Codex on Windows and macOS
 
-Configure the **Codex mode inside the ChatGPT desktop app** to use
-`gpt-6-astra` through [AgentRouter](https://agentrouter.org/), while keeping the
-normal ChatGPT experience and subscription unchanged.
+Configure **Codex only** inside the ChatGPT desktop app or Codex CLI. Windows
+and macOS scripts are separate; see the compatibility notes before choosing a
+provider configuration.
 
 > [!IMPORTANT]
 > This changes Codex only. It does not redirect ordinary ChatGPT Chat or Work.
@@ -13,7 +13,95 @@ normal ChatGPT experience and subscription unchanged.
 This project is community-maintained and is not affiliated with OpenAI or
 AgentRouter.
 
-## What the installer does
+## Windows 10/11 (experimental compatibility)
+
+AgentRouter's [Codex guide](https://co.agentrouter.org/portal/guide) documents
+`https://co.agentrouter.org/v1`, `wire_api = "chat"`, and `gpt-5.5` as its
+example. The installed Codex CLI 0.145.0 on the development machine rejects
+`wire_api = "chat"` and requires `responses`. The Windows installer therefore
+uses Responses so Codex accepts the configuration; AgentRouter's guide does
+not document Responses support. **No authenticated AgentRouter request has
+verified this combination.** It is experimental and may fail until the two
+published interfaces agree.
+
+AgentRouter's [public model list](https://co.agentrouter.org/portal/models)
+currently lists GPT-5.5 but not `gpt-6-astra`. The installer keeps Astra as the
+requested default without claiming AgentRouter supports it. You can explicitly
+select the documented fallback with `-Model gpt-5.5`; the setup never switches
+models automatically.
+
+Prerequisites: Windows 10 or 11, Python 3.11+, Codex CLI 0.145.0+, PowerShell
+7 (`pwsh.exe`), and an AgentRouter API key. The PowerShell credential helper
+uses Windows Credential Manager and Codex's
+`model_providers.<id>.auth.command` interface. Its
+offline checks attempt a dummy-only round trip and report when local policy
+blocks it. Credential Manager access was denied in the restricted development
+shell, so successful Windows credential storage/retrieval is **not verified**
+yet. Do not treat it as functional until the dummy-only check succeeds on the
+target host. No real API key is used by automated tests.
+
+From PowerShell in the repository:
+
+```powershell
+.\scripts\install-windows.ps1 -DryRun
+.\scripts\test-windows.ps1 -Offline
+```
+
+Inspect the proposed provider settings and offline test results first. When you
+choose to install, run:
+
+```powershell
+.\scripts\install-windows.ps1
+```
+
+The installer asks for confirmation, then opens a hidden local PowerShell
+prompt and saves the key to Windows Credential Manager. It makes a timestamped
+backup before changing `config.toml`. Keep the repository at the same path
+because Codex runs the token resolver from that checkout. To choose the
+documented model explicitly:
+
+```powershell
+.\scripts\install-windows.ps1 -Model gpt-5.5
+```
+
+Check status without sending a request, then opt into one live test only when
+you are ready:
+
+```powershell
+.\scripts\status-windows.ps1
+.\scripts\test-windows.ps1 -Live -Model gpt-6-astra
+```
+
+The live test sends only a fixed confirmation prompt from an empty temporary
+directory, disables retries, and does not silently switch models. If Astra is
+rejected, it reports the response and offers `gpt-5.5` as an explicit retry.
+`AGENTROUTER_OK` means success; `401` means authentication or client support;
+`402 Budget pool quota has been exhausted` means stop retrying until capacity
+returns.
+
+Rollback interactively with:
+
+```powershell
+.\scripts\rollback-windows.ps1
+```
+
+Use `-BackupPath <path>` to select a specific backup. Add
+`-RemoveCredential` to remove this setup's Credential Manager entry after
+configuration restore. Restart Codex and start a new task after install or
+rollback.
+
+To inspect the currently incompatible AgentRouter protocol as a **preview
+only**, run the Python helper with `--wire-api chat --dry-run`. It refuses to
+write a `chat` configuration because Codex 0.145.0 rejects it. Do not edit the
+config manually to bypass that validation.
+
+## macOS setup
+
+The existing macOS workflow below continues to use macOS Keychain and the
+Responses API at `https://agentrouter.org/v1`. It is separate from the Windows
+guide above.
+
+## What the macOS installer does
 
 - Checks that it is running on macOS with Python 3.11+ and Codex installed.
 - Validates the existing `~/.codex/config.toml` before changing it.

@@ -1,5 +1,18 @@
 # YouTube recording checklist
 
+## Windows 10/11 recording
+
+- Run the offline tests before recording; they use only a generated dummy
+  credential.
+- Show dry-run output and the explicit warning that AgentRouter's documented
+  Chat Completions API conflicts with Codex 0.145.0's Responses-only config.
+- Do not show or record the hidden API-key prompt or Credential Manager UI.
+- Do not run the live request unless using a test key and you intentionally
+  opt in. Astra is not in AgentRouter's current public list; do not imply it is
+  supported.
+- Demonstrate rollback from a disposable Codex config path, not a personal
+  configuration.
+
 ## Before recording
 
 - Update the ChatGPT desktop app and Codex CLI.

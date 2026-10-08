@@ -1,5 +1,63 @@
 # Troubleshooting
 
+## Windows: `wire_api = "chat"` is rejected
+
+The installed Codex CLI 0.145.0 reports that `chat` is no longer supported and
+requires `wire_api = "responses"`. The AgentRouter Codex guide still documents
+Chat Completions. The Windows installer uses Responses so Codex accepts the
+config, but AgentRouter's Responses compatibility remains unverified. Do not
+manually force `chat` into config. Check for updated guidance from both
+projects before retrying.
+
+## Windows: `gpt-6-astra` is rejected
+
+The current public AgentRouter model list names GPT-5.5 but not Astra. The
+Windows setup requests Astra explicitly and never switches models on its own.
+If the test reports a model error, choose whether to test the documented
+fallback with:
+
+```powershell
+.\scripts\test-windows.ps1 -Live -Model gpt-5.5
+```
+
+This sends a separate request only after you run it. It does not rewrite the
+configured model.
+
+## Windows Credential Manager access fails
+
+Run the offline checks first:
+
+```powershell
+.\scripts\test-windows.ps1 -Offline
+```
+
+They use a generated dummy value, never a real key. If Credential Manager
+returns access denied, a sandbox or local policy blocked the operation. Do not
+use an environment-variable or plaintext config workaround. Ask your device
+administrator to permit the documented Windows Credential Manager API for the
+current user, or do not install this provider. Check that PowerShell execution
+policy permits this local resolver; this project does not bypass policy.
+
+## Windows: resolver cannot be launched
+
+Codex runs `pwsh.exe -NoProfile -NonInteractive -File` against the
+resolver in this checkout. Keep the repository at its original path and ensure
+that PowerShell 7 is installed and can run local scripts under the current
+execution policy. Run `status-windows.ps1` to confirm the configured command and credential entry;
+the status check never prints the token.
+
+## Windows backup and rollback
+
+The installer reports the exact timestamped backup path. Restore the newest
+backup interactively, preserving a recovery copy of the current file, with:
+
+```powershell
+.\scripts\rollback-windows.ps1
+```
+
+Use `-BackupPath <path>` to choose a backup. The key remains in Windows
+Credential Manager unless you explicitly add `-RemoveCredential`.
+
 ## `402 Payment Required: Budget pool quota has been exhausted`
 
 The request reached AgentRouter but the resource pool assigned to the key has
