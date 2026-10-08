@@ -1,10 +1,13 @@
 import json
+import os
 from pathlib import Path, PureWindowsPath
+import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -185,6 +188,55 @@ name = "Keep"
             self.assertIn("experimental preview only", completed.stderr)
             self.assertFalse(config.exists())
             self.assertFalse((config.parent / "backups").exists())
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows")
+    def test_installer_dry_run_probes_real_python_and_does_not_write_config(self):
+        pwsh = shutil.which("pwsh.exe") or shutil.which("pwsh")
+        if not pwsh or not shutil.which("codex"):
+            self.skipTest("requires PowerShell 7 and Codex CLI")
+        with tempfile.TemporaryDirectory() as temp:
+            env = os.environ.copy()
+            env["CODEX_HOME"] = temp
+            completed = subprocess.run(
+                [pwsh, "-NoLogo", "-NoProfile", "-File", str(ROOT / "scripts" / "install-windows.ps1"), "-DryRun"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=45,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("DRY RUN:", completed.stdout)
+            self.assertIn(str(Path(temp) / "config.toml"), completed.stdout)
+            self.assertFalse((Path(temp) / "config.toml").exists())
+            self.assertFalse((Path(temp) / "backups").exists())
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows Credential Manager")
+    def test_credential_manager_dummy_store_retrieve_delete(self):
+        pwsh = shutil.which("pwsh.exe") or shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("requires PowerShell 7")
+        target = "AgentRouter/Codex/python-test-" + uuid.uuid4().hex
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(ROOT / "scripts" / "credential-windows.ps1"),
+                "-SelfTest",
+                "-TargetName",
+                target,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("PASS: dummy-only Credential Manager round-trip", completed.stdout)
+        self.assertNotIn("offline-test-", completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":

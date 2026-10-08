@@ -28,6 +28,7 @@ $stage = 'initialize'
 
 $nativeSource = @'
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security;
 
@@ -36,6 +37,13 @@ public static class AgentRouterCredentialStore
     private const int CRED_TYPE_GENERIC = 1;
     private const int CRED_PERSIST_LOCAL_MACHINE = 2;
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FILETIME
+    {
+        public uint LowDateTime;
+        public uint HighDateTime;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct CREDENTIAL
     {
@@ -43,7 +51,7 @@ public static class AgentRouterCredentialStore
         public int Type;
         public string TargetName;
         public string Comment;
-        public long LastWritten;
+        public FILETIME LastWritten;
         public int CredentialBlobSize;
         public IntPtr CredentialBlob;
         public int Persist;
@@ -68,9 +76,6 @@ public static class AgentRouterCredentialStore
     [DllImport("Advapi32.dll", EntryPoint = "CredFree")]
     private static extern void CredFree(IntPtr buffer);
 
-    [DllImport("kernel32.dll", EntryPoint = "RtlSecureZeroMemory")]
-    private static extern IntPtr SecureZeroMemory(IntPtr ptr, UIntPtr length);
-
     public static void Store(string target, SecureString secret)
     {
         IntPtr secureText = IntPtr.Zero;
@@ -94,14 +99,14 @@ public static class AgentRouterCredentialStore
             c.Persist = CRED_PERSIST_LOCAL_MACHINE;
             c.UserName = "AgentRouter API key";
             if (!CredWrite(ref c, 0))
-                throw new InvalidOperationException("Credential Manager write failed (Win32 error " + Marshal.GetLastWin32Error() + ").");
+                throw NativeFailure("write");
         }
         finally
         {
             if (bytes != null) Array.Clear(bytes, 0, bytes.Length);
             if (blob != IntPtr.Zero)
             {
-                SecureZeroMemory(blob, (UIntPtr)(uint)(secret.Length * 2));
+                for (int i = 0; i < secret.Length * 2; i++) Marshal.WriteByte(blob, i, 0);
                 Marshal.FreeHGlobal(blob);
             }
             if (secureText != IntPtr.Zero) Marshal.ZeroFreeGlobalAllocUnicode(secureText);
@@ -115,7 +120,7 @@ public static class AgentRouterCredentialStore
         {
             int error = Marshal.GetLastWin32Error();
             if (error == 1168) return false;
-            throw new InvalidOperationException("Credential Manager read failed (Win32 error " + error + ").");
+            throw NativeFailure("read", error);
         }
         CredFree(ptr);
         return true;
@@ -126,7 +131,17 @@ public static class AgentRouterCredentialStore
         if (CredDelete(target, CRED_TYPE_GENERIC, 0)) return true;
         int error = Marshal.GetLastWin32Error();
         if (error == 1168) return false;
-        throw new InvalidOperationException("Credential Manager delete failed (Win32 error " + error + ").");
+        throw NativeFailure("delete", error);
+    }
+
+    private static InvalidOperationException NativeFailure(string operation)
+    {
+        return NativeFailure(operation, Marshal.GetLastWin32Error());
+    }
+
+    private static InvalidOperationException NativeFailure(string operation, int error)
+    {
+        return new InvalidOperationException("Credential Manager " + operation + " failed (Win32 error " + error + ": " + new Win32Exception(error).Message + ").");
     }
 
     public static void WriteToken(string target)
@@ -144,7 +159,7 @@ public static class AgentRouterCredentialStore
             {
                 int error = Marshal.GetLastWin32Error();
                 if (error == 1168) throw new InvalidOperationException("credential unavailable");
-                throw new InvalidOperationException("Credential Manager read failed (Win32 error " + error + ").");
+                throw NativeFailure("read", error);
             }
             CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(ptr, typeof(CREDENTIAL));
             if (c.CredentialBlob == IntPtr.Zero || c.CredentialBlobSize < 2 || c.CredentialBlobSize % 2 != 0)
@@ -237,12 +252,23 @@ try {
 }
 catch {
     # Only emit known generic/status diagnostics; never emit the credential or arbitrary exception text.
-    $message = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
-    if ($message -match '^Credential Manager (write|read|delete) failed \(Win32 error \d+\)\.$' -or $message -eq 'credential unavailable' -or $message -eq 'Refusing to overwrite a pre-existing credential at the offline test target.') {
-        [Console]::Error.WriteLine("Credential operation failed: $message")
+    $exception = $_.Exception
+    $safeMessage = $null
+    $exceptionTypes = [System.Collections.Generic.List[string]]::new()
+    while ($null -ne $exception) {
+        $exceptionTypes.Add($exception.GetType().FullName)
+        if ($exception.Message -match '^Credential Manager (write|read|delete) failed \(Win32 error \d+: [^\r\n]{1,160}\)\.$' -or
+            $exception.Message -eq 'credential unavailable' -or
+            $exception.Message -eq 'Refusing to overwrite a pre-existing credential at the offline test target.') {
+            $safeMessage = $exception.Message
+            break
+        }
+        $exception = $exception.InnerException
     }
-    else {
-        [Console]::Error.WriteLine("Credential operation failed during $stage.")
+    if ($safeMessage) {
+        [Console]::Error.WriteLine("Credential operation failed: $safeMessage")
+    } else {
+        [Console]::Error.WriteLine("Credential operation failed during $stage (exception types: $($exceptionTypes -join ' -> ')).")
     }
     exit 1
 }

@@ -20,7 +20,7 @@ function Get-CodexConfigPath {
 
 function Invoke-Python {
     param([string[]] $Arguments)
-    & python @Arguments
+    & $python.Source @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Python helper failed with exit code $LASTEXITCODE." }
 }
 
@@ -39,11 +39,16 @@ if ($osVersion.Major -lt 10 -or $osVersion.Build -lt 10240 -or $productName -mat
     throw 'Windows 10 or Windows 11 is required.'
 }
 $windowsRelease = if ($osVersion.Build -ge 22000) { 'Windows 11' } else { 'Windows 10' }
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw 'Python 3.11+ is required.' }
+$python = Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $python -or $python.CommandType -ne 'Application') { throw 'Python 3.11+ is required.' }
 $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
 if (-not $pwsh) { throw 'PowerShell 7 (pwsh.exe) is required for the command-backed credential resolver.' }
-$pyVersion = & python -c 'import sys; print("%d.%d" % sys.version_info[:2])'
-if ($LASTEXITCODE -ne 0 -or [version]$pyVersion -lt [version]'3.11') { throw 'Python 3.11+ is required.' }
+$pyVersionOutput = (& $python.Source --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $pyVersionOutput -notmatch '^Python\s+(\d+)\.(\d+)(?:\.(\d+))?') {
+    throw "Could not determine Python version from '$($python.Source) --version'."
+}
+$pyVersion = [version]::new([int]$Matches[1], [int]$Matches[2], [int]$(if ($Matches[3]) { $Matches[3] } else { 0 }))
+if ($pyVersion -lt [version]'3.11') { throw "Python 3.11+ is required; found Python $pyVersionOutput at $($python.Source)." }
 $codex = Get-Command codex -ErrorAction SilentlyContinue
 if (-not $codex) { throw 'Codex CLI was not found. Install/update Codex before continuing.' }
 $versionOutput = & $codex.Source --version 2>$null
@@ -66,14 +71,14 @@ Write-Output 'The latest AgentRouter guide documents wire_api=chat, which this i
 $pythonArgs = @($mergeTool, '--config', $config, '--resolver', $resolver, '--model', $Model, '--wire-api', 'responses')
 if ($DryRun) {
     Write-Output 'DRY RUN: existing TOML (if present) and proposed merge validate; no credential prompt, backup, or write.'
-    & python @pythonArgs --dry-run | Out-Null
+    & $python.Source @pythonArgs --dry-run | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Python helper failed with exit code $LASTEXITCODE." }
     exit 0
 }
 
 # Validate before the user enters a secret. Do not print the merged config because
 # unrelated existing settings may themselves contain private values.
-& python @pythonArgs --dry-run | Out-Null
+& $python.Source @pythonArgs --dry-run | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Configuration preflight failed with exit code $LASTEXITCODE." }
 
 Write-Output 'This changes only the user Codex provider settings in config.toml and creates a timestamped backup.'
