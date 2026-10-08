@@ -13,6 +13,34 @@ $resolver = Join-Path $scriptDir 'credential-windows.ps1'
 $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
 if (-not $pwsh) { throw 'PowerShell 7 (pwsh.exe) is required for resolver checks.' }
 
+function Invoke-ResolverProcess {
+    param([string[]] $Arguments)
+
+    # Capture the child process streams directly. PowerShell can promote a
+    # nonzero native exit plus stderr to NativeCommandError when invoked with
+    # $ErrorActionPreference='Stop', even when that failure is intentional.
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $pwsh.Source
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) { throw 'Could not start the PowerShell credential resolver.' }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+    [pscustomobject]@{
+        ExitCode = $process.ExitCode
+        Stdout = $stdoutTask.GetAwaiter().GetResult()
+        Stderr = $stderrTask.GetAwaiter().GetResult()
+    }
+    $process.Dispose()
+}
+
 if ($Live -and $Offline) { throw 'Choose either -Live or -Offline.' }
 if ($Offline -or -not $Live) {
     Write-Output 'Offline checks: Python config/backup/rollback tests and a unique missing-credential resolver check.'
@@ -20,35 +48,31 @@ if ($Offline -or -not $Live) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $roundTripTarget = 'AgentRouter/Codex/offline-test-' + [guid]::NewGuid().ToString('N')
-    $roundTrip = @(& $pwsh.Source -NoLogo -NoProfile -NonInteractive -File $resolver -SelfTest -TargetName $roundTripTarget 2>&1)
-    $roundTripText = $roundTrip -join "`n"
-    if ($LASTEXITCODE -eq 0 -and ($roundTrip -join "`n") -match 'PASS: dummy-only Credential Manager round-trip') {
+    $roundTrip = Invoke-ResolverProcess @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $resolver, '-SelfTest', '-TargetName', $roundTripTarget)
+    if ($roundTrip.ExitCode -eq 0 -and $roundTrip.Stdout -match 'PASS: dummy-only Credential Manager round-trip' -and -not $roundTrip.Stderr) {
         Write-Output 'PASS: Windows Credential Manager store/retrieve path works with a generated dummy secret; it was deleted.'
     }
-    elseif ($roundTripText -match 'Win32 error 5') {
-        Write-Output 'PASS: Credential Manager access-denied failure is handled without stdout token output or a live request.'
-        Write-Output 'NOTE: successful Credential Manager storage/retrieval could not be verified in this restricted execution context.'
-    }
     else {
-        throw 'Credential Manager dummy-only round-trip failed; inspect only the generic resolver diagnostic.'
+        $diagnostic = $roundTrip.Stderr.Trim()
+        if ($diagnostic -notmatch '^Credential operation failed: (Credential Manager (?:read|write|delete) failed \(Win32 error \d+: [^\r\n]{1,160}\)\.|Credential operation failed during [^\r\n]{1,160}\.)$') {
+            $diagnostic = 'unrecognized resolver failure; output suppressed'
+        }
+        throw "Credential Manager dummy round-trip failed (exit $($roundTrip.ExitCode)): $diagnostic"
     }
 
     $uniqueTarget = 'AgentRouter/Codex/offline-test-' + [guid]::NewGuid().ToString('N')
-    $resolverOutput = @(& $pwsh.Source -NoLogo -NoProfile -NonInteractive -File $resolver -Get -TargetName $uniqueTarget 2>&1)
-    $resolverExit = $LASTEXITCODE
-    $resolverText = $resolverOutput -join "`n"
-    if ($resolverExit -eq 0 -or $resolverText -match '^[A-Za-z0-9_-]{24,}$') {
+    $missingCredential = Invoke-ResolverProcess @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $resolver, '-Get', '-TargetName', $uniqueTarget)
+    if ($missingCredential.ExitCode -ne 1 -or $missingCredential.Stdout.Trim().Length -ne 0) {
         throw 'Missing-credential test failed: resolver must fail without writing a token to stdout.'
     }
-    if ($resolverText -match 'credential unavailable') {
-        Write-Output 'PASS: missing credential fails closed and produces no stdout token.'
+    if ($missingCredential.Stderr.Trim() -cne 'Credential operation failed: credential unavailable') {
+        $safeError = $missingCredential.Stderr.Trim()
+        if ($safeError -notmatch '^Credential operation failed: Credential Manager read failed \(Win32 error \d+: [^\r\n]{1,160}\)\.$') {
+            $safeError = 'unrecognized resolver failure; output suppressed'
+        }
+        throw "Missing-credential test got an unexpected resolver error (exit $($missingCredential.ExitCode)): $safeError"
     }
-    elseif ($resolverText -match 'Win32 error 5') {
-        Write-Output 'PASS: resolver fails closed when Credential Manager access is denied; no stdout token.'
-    }
-    else {
-        throw 'Resolver failure path returned an unexpected generic diagnostic.'
-    }
+    Write-Output 'PASS: missing credential returned the expected error, exit code 1, and no stdout token.'
     Write-Output 'PASS: no live AgentRouter request was sent.'
     exit 0
 }
